@@ -435,6 +435,44 @@
             box-shadow: var(--shadow-sm);
         }
 
+        .message.ai .message-bubble p {
+            margin: 0 0 12px 0;
+        }
+
+        .message.ai .message-bubble p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message.ai .message-bubble strong {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .message.ai .message-bubble ul,
+        .message.ai .message-bubble ol {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+
+        .message.ai .message-bubble li {
+            margin: 6px 0;
+            line-height: 1.5;
+        }
+
+        .message.ai .message-bubble h1,
+        .message.ai .message-bubble h2,
+        .message.ai .message-bubble h3 {
+            margin: 12px 0 8px 0;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .message.ai .message-bubble h1:first-child,
+        .message.ai .message-bubble h2:first-child,
+        .message.ai .message-bubble h3:first-child {
+            margin-top: 0;
+        }
+
         .message-image {
             max-width: 300px;
             border-radius: var(--radius-sm);
@@ -692,6 +730,7 @@
             scrollbar-color: rgba(74, 144, 226, 0.4) rgba(225, 232, 237, 0.3);
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <!-- ==================== 页面头部 ==================== -->
@@ -802,6 +841,9 @@
             isProcessing: false            // 是否正在处理中
         };
 
+        // 全局变量：存储图片的 Base64 格式
+        let selectedImageBase64 = null;
+
         // ==================== DOM 元素获取 ====================
         const elements = {
             uploadArea: document.getElementById('uploadArea'),
@@ -829,6 +871,39 @@
             return Date.now().toString(36) + Math.random().toString(36).substr(2);
         }
 
+        // 获取勾选的症状并拼成字符串
+        function getSelectedSymptomsString() {
+            // 方法1：从 state.selectedSymptoms 数组获取
+            const symptoms = state.selectedSymptoms;
+            
+            if (symptoms.length === 0) {
+                return '';
+            }
+            
+            // 拼成字符串，用顿号分隔
+            const symptomsString = symptoms.join('、');
+            
+            console.log('当前选中的症状:', symptoms);
+            console.log('症状字符串:', symptomsString);
+            
+            return symptomsString;
+        }
+
+        // 从 DOM 直接获取勾选的症状（备用方法）
+        function getSelectedSymptomsFromDOM() {
+            const checkedItems = document.querySelectorAll('.symptom-item.checked');
+            const symptoms = [];
+            
+            checkedItems.forEach(item => {
+                const symptom = item.dataset.symptom;
+                if (symptom) {
+                    symptoms.push(symptom);
+                }
+            });
+            
+            return symptoms.join('、');
+        }
+
         // ==================== 图片上传功能 ====================
         
         // 处理图片上传
@@ -840,12 +915,22 @@
 
             const reader = new FileReader();
             reader.onload = (e) => {
+                // 保存图片数据到 state
                 state.uploadedImage = {
                     data: e.target.result,
                     name: file.name
                 };
+                
+                // 保存 Base64 格式到全局变量
+                selectedImageBase64 = e.target.result;
+                
+                // 显示预览
                 elements.previewImg.src = e.target.result;
                 elements.imagePreview.classList.add('show');
+                
+                // 打印日志，方便调试
+                console.log('图片已上传，Base64 格式已保存');
+                console.log('Base64 数据长度:', selectedImageBase64.length);
             };
             reader.readAsDataURL(file);
         }
@@ -883,8 +968,10 @@
         elements.removeImage.addEventListener('click', (e) => {
             e.stopPropagation();
             state.uploadedImage = null;
+            selectedImageBase64 = null;  // 清空全局变量
             elements.imagePreview.classList.remove('show');
             elements.imageInput.value = '';
+            console.log('图片已移除，Base64 变量已清空');
         });
 
         // ==================== 症状选择功能 ====================
@@ -933,7 +1020,11 @@
             if (content) {
                 const bubble = document.createElement('div');
                 bubble.className = 'message-bubble';
-                bubble.textContent = content;
+                if (isUser) {
+                    bubble.textContent = content;
+                } else {
+                    bubble.innerHTML = marked.parse(content);
+                }
                 contentDiv.appendChild(bubble);
             }
 
@@ -997,51 +1088,123 @@
             elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
         }
 
-        // 模拟 AI 回复
-        function simulateAIResponse(userMessage, hasImage, symptoms) {
-            // 移除欢迎消息
+        //  AI 回复
+        async function simulateAIResponse(userMessage, hasImage, symptoms, imageBase64Data) {
+            // 1. 移除欢迎消息并添加 Loading
             removeWelcomeMessage();
-
-            // 添加 Loading
             const loadingElement = createLoadingElement();
             elements.chatContainer.appendChild(loadingElement);
             scrollToBottom();
 
-            // 模拟延迟后回复
-            setTimeout(() => {
+            // 2. 智谱 API 配置 (请替换为你的真实 Key)
+            const API_KEY = "9be309508b9c4d56bc0f56096c8ab19b.eroSF27fwmiMww20"; 
+            const API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+
+            // 3. 构造发送给 AI 的 Prompt（融入合规避敏与格式引导）
+            const isHealthConsultation = hasImage || symptoms.length > 0 || 
+                (userMessage && (
+                    userMessage.includes('症状') || 
+                    userMessage.includes('疼痛') || 
+                    userMessage.includes('瘙痒') || 
+                    userMessage.includes('发红') || 
+                    userMessage.includes('起疹') || 
+                    userMessage.includes('脱皮') || 
+                    userMessage.includes('水泡') || 
+                    userMessage.includes('皮肤') ||
+                    userMessage.includes('患处') ||
+                    userMessage.includes('病情')
+                ));
+
+            let promptText = "";
+            
+            if (isHealthConsultation) {
+                promptText = `你是一个专业的皮肤图像特征分析助手。\n\n` +
+                             `【体征表现】: ${symptoms.length > 0 ? symptoms.join('、') : '未勾选'}\n` +
+                             `【补充描述】: ${userMessage || '无'}\n\n` +
+                             `【分析指示】：\n` +
+                             `1. 仔细观察图片：分析患处的形态特征（如是否有晶莹水疱、露珠状改变、基底发红或红斑分布等）。\n` +
+                             `2. 结合图片细节与体征，分析 2-3 种最贴合的常见可能原因（如看到水疱特征请优先分析水痘、带状疱疹或疱疹样皮炎等）。\n` +
+                             `3. 给出建议就诊科室（如皮肤科）。\n` +
+                             `4. 提供 2-3 条日常护理建议（如保持干燥、严禁挤压或破溃）。\n\n` +
+                             `注意：回答需专业客观`;
+            } else {
+                promptText = `用户说："${userMessage}"\n\n` +
+                             `请以温和、自然的 AI 皮肤健康助手语气简短回答（不超过 50 字），引导用户上传照片或描述症状。`;
+            }
+
+            // 4. 组装多模态节点 (Text + Image)
+            const contentList = [{ type: "text", text: promptText }];
+            if (hasImage && imageBase64Data) {
+                contentList.push({
+                    type: "image_url",
+                    image_url: { url: imageBase64Data }
+                });
+            }
+
+            try {
+                // 5. 调用智谱 GLM-4V 大模型 API
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "glm-4v-flash", // 智谱免费/低门槛多模态模型
+                        messages: [
+                            { role: "user", content: contentList }
+                        ]
+                    })
+                });
+
+                const data = await response.json();
+
                 // 移除 Loading
                 const loadingMsg = document.getElementById('loadingMessage');
                 if (loadingMsg) loadingMsg.remove();
 
-                // 生成 AI 回复内容
-                let aiResponse = '';
-                
-                if (hasImage && symptoms.length > 0) {
-                    aiResponse = `感谢您提供的照片和症状信息。根据您描述的${symptoms.join('、')}等症状，结合照片表现，我初步分析如下：\n\n`;
-                    aiResponse += `📌 可能情况：\n`;
-                    aiResponse += `1. 接触性皮炎：症状较为符合，建议避免接触可疑过敏原。\n`;
-                    aiResponse += `2. 湿疹：保持患处清洁干燥，避免搔抓。\n\n`;
-                    aiResponse += `💡 建议措施：\n`;
-                    aiResponse += `• 保持患处清洁，避免使用刺激性洗护用品\n`;
-                    aiResponse += `• 避免搔抓，防止继发感染\n`;
-                    aiResponse += `• 如症状持续或加重，建议及时就医\n\n`;
-                    aiResponse += `⚠️ 温馨提示：此为 AI 初步分析，仅供参考，请以专业医生诊断为准。`;
-                } else if (hasImage) {
-                    aiResponse = `已收到您上传的患处照片。为了提供更准确的初步分析，建议您补充选择相关症状表现，如发红、瘙痒、疼痛等。这样我可以结合症状和图像进行综合判断。`;
-                } else if (symptoms.length > 0) {
-                    aiResponse = `您选择的症状：${symptoms.join('、')}。\n\n为了提供更准确的初步诊断，建议您上传患处照片，这样我可以结合图像和症状进行综合分析。\n\n⚠️ 温馨提示：此为 AI 辅助诊断，仅供参考，请以专业医生诊断为准。`;
+                let aiResponse = "";
+
+                if (data.choices && data.choices[0]) {
+                    // 获取 API 真实回答并拼上你的通用免责声明
+                    aiResponse = data.choices[0].message.content + "\n\n⚠️ 温馨提示：此分析仅供健康科普与导诊参考，请以专业医生诊断为准。";
                 } else {
-                    aiResponse = `您好！我是 AI 皮肤病灶初诊助手。为了给您提供准确的初步分析，请：\n\n1. 上传患处照片\n2. 选择相关症状表现\n3. 输入补充描述\n\n我将基于这些信息为您提供专业的初步诊断建议。`;
+                    throw new Error("API 返回异常");
                 }
 
-                // 添加 AI 回复
+                // 添加 AI 真实回复到页面
                 const aiMessageElement = createMessageElement(aiResponse, false);
                 elements.chatContainer.appendChild(aiMessageElement);
-                scrollToBottom();
 
+            } catch (error) {
+                console.error("API 请求失败，回退到兜底逻辑:", error);
+
+                // 移除 Loading
+                const loadingMsg = document.getElementById('loadingMessage');
+                if (loadingMsg) loadingMsg.remove();
+
+                // 6. 出错或 Key 未配置时的兜底逻辑 (保留你原有的降级逻辑)
+                let fallbackResponse = "";
+                if (hasImage && symptoms.length > 0) {
+                    fallbackResponse = `已接收到照片和【${symptoms.join('、')}】症状。当前网络或接口响应超时，建议保持患处清洁干燥，避免搔抓，并及时就医检查。`;
+                } else if (hasImage) {
+                    fallbackResponse = `已收到照片。建议补充勾选相关症状（如发红、瘙痒等），方便进行更全面的分析。`;
+                } else if (symptoms.length > 0) {
+                    fallbackResponse = `您选择的症状：${symptoms.join('、')}。建议上传患处照片以获取更精准的科普分析。`;
+                } else {
+                    fallbackResponse = `您好！我是 AI 皮肤健康分诊助手。请上传照片或勾选症状，我将为您提供初步的健康导诊建议。`;
+                }
+                
+                fallbackResponse += "\n\n⚠️ 温馨提示：此为 AI 辅助分析，仅供参考，请以专业医生诊断为准。";
+
+                const aiMessageElement = createMessageElement(fallbackResponse, false);
+                elements.chatContainer.appendChild(aiMessageElement);
+            } finally {
+                // 恢复发送状态
                 state.isProcessing = false;
                 elements.sendButton.disabled = false;
-            }, 2000);
+                scrollToBottom();
+            }
         }
 
         // 发送消息
@@ -1068,7 +1231,7 @@
             let userMessage = messageText;
             if (hasSymptoms) {
                 const symptomText = `症状：${state.selectedSymptoms.join('、')}`;
-                userMessage = userMessage ? `${symptomText}\n${userMessage}` : symptomText;
+                userMessage = userMessage ? `${symptomText}。${userMessage}` : symptomText;
             }
 
             // 添加用户消息到聊天框
@@ -1092,8 +1255,17 @@
             // 保存选中的症状（用于 AI 分析）
             const selectedSymptomsCopy = [...state.selectedSymptoms];
 
+            // 1. 重置 JS 中的选中状态
+            state.selectedSymptoms = [];
+
+            // 2. 清除页面上所有标签的 .checked 高亮和打勾样式
+            document.querySelectorAll('.symptom-item.checked').forEach(item => {
+                item.classList.remove('checked');
+            });
+
             // 模拟 AI 回复
-            simulateAIResponse(userMessage, hasImage, selectedSymptomsCopy);
+
+            simulateAIResponse(userMessage, hasImage, selectedSymptomsCopy, sentImageData);
         }
 
         // 点击发送按钮
