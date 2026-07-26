@@ -45,9 +45,7 @@ AI 能力底层支持：华为云盘古大模型 API / ModelArts / 华为云图�
 克隆/下载项目：
 
 Bash
-git clone https://github.com/YourUsername/skin-ai-agent.git
-启动页面：
-直接在本地双击打开 index.html 文件即可体验前端交互。
+git clone (https://github.com/hequanyanyong/skin-ai-agent)
 
 🧭 项目使用流程
 上传患处图像：在左侧区域点击或拖拽上传清晰的皮肤患处照片。
@@ -65,7 +63,3 @@ git clone https://github.com/YourUsername/skin-ai-agent.git
 
 👥 参赛团队信息
 作品名称：AI 皮肤病灶初诊系统
-
-所属赛道：华为 CodeArts 智能体开发赛道
-
-团队成员：[填入你的名字/团队名称]
